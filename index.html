@@ -359,19 +359,31 @@
     .wx-days .lo { color: var(--muted); }
     .wx-days .pr { color: var(--c-cold); min-height: 1em; }
 
-    /* KPI row: label above, value below — one tile per metric */
+    /* Metrics, grouped by what they describe — one labelled column per group
+       (Air · Wind · Sky · Next hour), label:value rows inside. Scanning is
+       two-step: find the group, read down. */
     .wx-det {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 11px 20px;
+      gap: 12px 22px;
       padding: 12px 0;
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
+      align-items: start;
     }
 
-    .wx-det div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .wx-det .k { color: var(--muted); font-size: var(--fs-2xs); line-height: 1.2; }
-    .wx-det .v { font-size: var(--fs-sm); font-weight: 600; line-height: 1.25; }
+    .wx-g { min-width: 0; }
+    .wx-g .gt {
+      color: var(--muted);
+      font-size: var(--fs-2xs);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+    .wx-g .r { display: flex; justify-content: space-between; gap: 8px; line-height: 1.7; }
+    .wx-g .k { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+    .wx-g .v { font-size: var(--fs-xs); font-weight: 600; text-align: right; white-space: nowrap; }
 
     #wx-status { color: var(--muted); font-size: var(--fs-sm); }
 
@@ -385,7 +397,10 @@
       color: var(--muted);
     }
 
-    #wx-dyn { display: contents; } /* let async chips join the flex row */
+    /* Named slots keep the async chips (AQI, Kp) in a fixed position instead
+       of whichever order the responses happen to arrive in */
+    #wx-aqi, #wx-kp { display: contents; }
+    .wx-extra .src { margin-left: auto; } /* attribution sits apart, on the right */
     #wx-metar { margin-top: 6px; padding: 0 2px; }
     .wx-extra .alert { color: var(--accent); font-weight: 600; margin-left: 3px; }
 
@@ -970,38 +985,47 @@
         const curSym = (cur.next_1_hours || cur.next_6_hours || cur.next_12_hours)?.summary.symbol_code;
         const [icon, desc] = metSymbol(curSym);
 
-        // Full current-conditions grid — every field yr provides for "now"
+        // Current conditions, grouped by what they describe — Air · Wind · Sky
+        // · Next hour. Feels-like lives in the hero next to the temperature it
+        // qualifies. A field yr didn't send drops its row; a group with no
+        // rows disappears entirely.
         const compass = deg => ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
         const n1 = cur.next_1_hours?.details;
-        const rows = [];
-        // One stat tile per metric: label above, value below
-        const add = (k, v, tip) => v != null &&
-          rows.push(`<div${tip ? ` title="${tip}"` : ""}><span class="k">${k}</span><span class="v">${v}</span></div>`);
-        if (det.apparent_air_temperature != null) add("Feels like", col(`${Math.round(det.apparent_air_temperature)}°`, tempC(det.apparent_air_temperature)),
-          "Apparent temperature — how it actually feels, factoring in wind and humidity");
-        add("Wind", `${col(`${Math.round(det.wind_speed)} m/s`, windC(det.wind_speed))} ${compass(det.wind_from_direction)}`,
-          "Average wind speed and the compass direction it blows from");
-        if (det.wind_speed_of_gust != null) add("Gusts", col(`${Math.round(det.wind_speed_of_gust)} m/s`, windC(det.wind_speed_of_gust)),
-          "Peak wind gust speed");
-        add("Humidity", `${Math.round(det.relative_humidity)}%`,
-          "Relative humidity — how much moisture the air holds vs. its maximum");
-        if (det.dew_point_temperature != null) add("Dew point", col(`${Math.round(det.dew_point_temperature)}°`, dewC(det.dew_point_temperature)),
-          "Temperature at which dew would form — the closer to the air temperature, the muggier it feels");
-        add("Pressure", `${Math.round(det.air_pressure_at_sea_level)} hPa`,
-          "Air pressure at sea level — falling pressure usually signals worsening weather");
-        add("Clouds", `${Math.round(det.cloud_area_fraction)}%`,
-          "Share of the sky covered by clouds");
-        if (det.cloud_area_fraction_low != null)
-          add("Clouds L·M·H", `${Math.round(det.cloud_area_fraction_low)}·${Math.round(det.cloud_area_fraction_medium)}·${Math.round(det.cloud_area_fraction_high)}%`,
-            "Cloud cover split by altitude: low · medium · high layers");
-        if (det.fog_area_fraction != null) add("Fog", `${Math.round(det.fog_area_fraction)}%`,
-          "Area covered by fog");
-        if (det.ultraviolet_index_clear_sky != null) add("UV index", col(Math.round(det.ultraviolet_index_clear_sky), uvC(det.ultraviolet_index_clear_sky)),
-          "UV strength under clear sky — from 3 upward, sun protection is advised");
-        if (n1) add("Rain next hour", `${col(`${n1.precipitation_amount ?? 0} mm`, (n1.precipitation_amount ?? 0) > 0 ? "var(--c-cold)" : "")}${n1.probability_of_precipitation != null ? ` (${Math.round(n1.probability_of_precipitation)}%)` : ""}`,
-          "Expected precipitation over the next hour");
-        if (n1?.probability_of_thunder != null) add("Thunder", col(`${Math.round(n1.probability_of_thunder)}%`, n1.probability_of_thunder >= 60 ? "var(--c-hot)" : n1.probability_of_thunder >= 30 ? "var(--c-warm)" : ""),
-          "Probability of thunder in the next hour");
+        const R = (k, v, tip) => `<div class="r"${tip ? ` title="${tip}"` : ""}><span class="k">${k}</span><span class="v">${v}</span></div>`;
+        const G = (title, rows) => rows.join("") ? `<div class="wx-g"><div class="gt">${title}</div>${rows.join("")}</div>` : "";
+
+        const groups = [
+          G("Air", [
+            R("Humidity", `${Math.round(det.relative_humidity)}%`,
+              "Relative humidity — how much moisture the air holds vs. its maximum"),
+            det.dew_point_temperature != null ? R("Dew point", col(`${Math.round(det.dew_point_temperature)}°`, dewC(det.dew_point_temperature)),
+              "Temperature at which dew would form — the closer to the air temperature, the muggier it feels") : "",
+            R("Pressure", `${Math.round(det.air_pressure_at_sea_level)} hPa`,
+              "Air pressure at sea level — falling pressure usually signals worsening weather"),
+          ]),
+          G("Wind", [
+            R("Speed", `${col(`${Math.round(det.wind_speed)} m/s`, windC(det.wind_speed))} ${compass(det.wind_from_direction)}`,
+              "Average wind speed and the compass direction it blows from"),
+            det.wind_speed_of_gust != null ? R("Gusts", col(`${Math.round(det.wind_speed_of_gust)} m/s`, windC(det.wind_speed_of_gust)),
+              "Peak wind gust speed") : "",
+          ]),
+          G("Sky", [
+            R("Clouds", `${Math.round(det.cloud_area_fraction)}%`,
+              "Share of the sky covered by clouds"),
+            det.cloud_area_fraction_low != null ? R("Layers", `${Math.round(det.cloud_area_fraction_low)}·${Math.round(det.cloud_area_fraction_medium)}·${Math.round(det.cloud_area_fraction_high)}%`,
+              "Cloud cover split by altitude: low · medium · high") : "",
+            det.fog_area_fraction != null ? R("Fog", `${Math.round(det.fog_area_fraction)}%`,
+              "Area covered by fog") : "",
+            det.ultraviolet_index_clear_sky != null ? R("UV", col(Math.round(det.ultraviolet_index_clear_sky), uvC(det.ultraviolet_index_clear_sky)),
+              "UV strength under clear sky — from 3 upward, sun protection is advised") : "",
+          ]),
+          G("Next hour", [
+            n1 ? R("Rain", `${col(`${n1.precipitation_amount ?? 0} mm`, (n1.precipitation_amount ?? 0) > 0 ? "var(--c-cold)" : "")}${n1.probability_of_precipitation != null ? ` (${Math.round(n1.probability_of_precipitation)}%)` : ""}`,
+              "Expected precipitation over the next hour") : "",
+            n1?.probability_of_thunder != null ? R("Thunder", col(`${Math.round(n1.probability_of_thunder)}%`, n1.probability_of_thunder >= 60 ? "var(--c-hot)" : n1.probability_of_thunder >= 30 ? "var(--c-warm)" : ""),
+              "Probability of thunder in the next hour") : "",
+          ]),
+        ].join("");
 
         // Aggregate hourly/6-hourly steps into local days: min/max temp, rain
         // sum, symbol taken from the 6h summary closest to midday
@@ -1038,17 +1062,20 @@
             sunChip = `<span class="chip" title="Sunrise and sunset today">↑ ${sun.sunrise.time.slice(11, 16)} ↓ ${sun.sunset.time.slice(11, 16)}</span>`;
         }
 
+        // Hero shows the temperature pair (actual + feels-like); the place is
+        // already in the page header. Footer chips in fixed order: sun · moon
+        // · AQI · Kp, attribution apart on the right.
         $("wx").innerHTML = `
           <div class="wx-top">
             <div class="wx-now">
               <span class="i">${icon}</span>
               <span class="t"${tempC(det.air_temperature) ? ` style="color:${tempC(det.air_temperature)}"` : ""}>${Math.round(det.air_temperature)}°</span>
-              <span class="d"><b>${desc}</b>${PLACE ? `<span title="Your current location (approximate)">${esc(PLACE)}</span>` : ""}</span>
+              <span class="d"><b>${desc}</b>${det.apparent_air_temperature != null ? `<span title="Apparent temperature — how it actually feels, factoring in wind and humidity">Feels like ${col(`${Math.round(det.apparent_air_temperature)}°`, tempC(det.apparent_air_temperature))}</span>` : ""}</span>
             </div>
             <div class="wx-days">${days}</div>
           </div>
-          <div class="wx-det">${rows.join("")}</div>
-          <div class="wx-extra" id="wx-extra">${sunChip}<span class="chip" title="Current phase of the moon">${moonPhase(new Date()).join(" ")}</span><span id="wx-dyn"></span><a class="chip" href="https://www.yr.no/" target="_blank" rel="noopener" title="Forecast data: MET Norway / yr.no (CC BY 4.0)">yr.no</a></div>
+          <div class="wx-det">${groups}</div>
+          <div class="wx-extra" id="wx-extra">${sunChip}<span class="chip" title="Current phase of the moon">${moonPhase(new Date()).join(" ")}</span><span id="wx-aqi"></span><span id="wx-kp"></span><a class="chip src" href="https://www.yr.no/" target="_blank" rel="noopener" title="Forecast data: MET Norway / yr.no (CC BY 4.0)">yr.no</a></div>
           <div class="wx-extra" id="wx-metar" hidden
                title="METAR — raw aviation weather report from the nearest airport with data. Format: station · day+time UTC · wind (degrees/knots) · visibility · clouds · temp/dew point · QNH pressure"></div>`;
 
@@ -1066,8 +1093,8 @@
         const res = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${LOCATION.lat}&longitude=${LOCATION.lon}&current=european_aqi`);
         const a = await res.json();
         const v = Math.round(a.current.european_aqi);
-        $("wx-dyn").insertAdjacentHTML("beforeend",
-          `<span class="chip" title="European Air Quality Index (Open-Meteo): ≤20 good · ≤40 fair · ≤60 moderate · ≤80 poor · above 80 very poor">AQI ${col(v, aqiC(v))} ${aqiLabel(v)}</span>`);
+        $("wx-aqi").innerHTML =
+          `<span class="chip" title="European Air Quality Index (Open-Meteo): ≤20 good · ≤40 fair · ≤60 moderate · ≤80 poor · above 80 very poor">AQI ${col(v, aqiC(v))} ${aqiLabel(v)}</span>`;
       } catch { /* leave the line without AQI */ }
     }
 
@@ -1151,8 +1178,8 @@
         const kpNow = observed.length ? observed[observed.length - 1].kp : null;
         const kpMax = Math.max(...rows.filter(r => r.observed === "predicted").map(r => r.kp));
         const alert = kpMax >= 7 ? ` <span class="alert">aurora possible!</span>` : "";
-        $("wx-dyn").insertAdjacentHTML("beforeend",
-          `<span class="chip" title="Planetary K-index (NOAA) — global geomagnetic activity, 0–9. At Slovak latitude an aurora needs roughly Kp ≥ 7">Kp ${kpNow !== null ? col(kpNow.toFixed(1), kpC(kpNow)) : "?"} (max ${col(kpMax.toFixed(1), kpC(kpMax))})${alert}</span>`);
+        $("wx-kp").innerHTML =
+          `<span class="chip" title="Planetary K-index (NOAA) — global geomagnetic activity, 0–9. At Slovak latitude an aurora needs roughly Kp ≥ 7">Kp ${kpNow !== null ? col(kpNow.toFixed(1), kpC(kpNow)) : "?"} (max ${col(kpMax.toFixed(1), kpC(kpMax))})${alert}</span>`;
       } catch { /* leave the line without aurora info */ }
     }
 
