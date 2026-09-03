@@ -592,8 +592,6 @@
     // Reuters killed their public RSS in 2020 — the Google News site: filter is
     // the standard stand-in for a "Reuters top" feed.
     // strip: regex removing the "- Publisher" suffix Google News appends
-    // utc: feed timestamps are UTC and need shifting to local time (Google News);
-    //      Denník N already reports local wall-clock time
     const TICKER_FEEDS = [
       // full: the feed truncates titles with "…" — use the item description
       // (complete text) instead
@@ -603,7 +601,7 @@
       // NB: the sk/SK edition of this query returns years-old articles with
       // date-only timestamps (constant 07:00) — the US edition is fresh.
       { name: "Reuters", url: "https://news.google.com/rss/search?q=site:reuters.com&hl=en-US&gl=US&ceid=US:en",
-        strip: /\s+-\s+Reuters(\.com)?$/, utc: true, dot: "var(--c-warm)" },
+        strip: /\s+-\s+Reuters(\.com)?$/, dot: "var(--c-warm)" },
     ];
     // NB: rss2json fails on feed URLs whose query contains spaces — keep queries single-word
 
@@ -1099,10 +1097,12 @@
     // first, then a raw fetch parsed with DOMParser in the browser.
     function newsItem(f, it, absolute) {
       // absolute = the timestamp carries its own zone (raw RSS); otherwise
-      // rss2json's "YYYY-MM-DD HH:MM:SS" is UTC for Google feeds, local for DN
+      // rss2json normalises every feed to UTC but drops the zone from its
+      // "YYYY-MM-DD HH:MM:SS", so the Z has to be re-attached — without it the
+      // string parses as local time and headlines read one UTC offset early.
       const raw = (it.pubDate || "").trim();
       const d = absolute ? new Date(raw)
-              : new Date(raw.replace(" ", "T") + (f.utc ? "Z" : ""));
+              : new Date(raw.replace(" ", "T") + "Z");
       const body = plainText(it.description);
       return {
         src: f.name,
