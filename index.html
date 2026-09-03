@@ -137,6 +137,8 @@
     }
 
     #clock {
+      display: flex;
+      align-items: center;
       font-size: var(--fs-display);
       font-weight: 600;
       letter-spacing: -0.04em;
@@ -146,11 +148,46 @@
 
     #c-s::before { content: ":"; }
 
-    .time-meta { display: flex; flex-direction: column; gap: 5px; line-height: 1.2; }
-    #date { color: var(--text); font-size: var(--fs-md); font-weight: 500; }
-    .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    /* Timezone rides with the clock — it qualifies the time itself, not the
+       date. Small two-line stack (abbreviation over UTC offset) so it reads
+       as a unit label on the number, like the unit on a measurement. */
+    #c-tz {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      margin-left: 12px;
+      font-size: var(--fs-2xs);
+      font-weight: 500;
+      letter-spacing: 0;
+      font-variant-numeric: normal;
+      line-height: 1;
+      color: var(--muted);
+    }
 
-    /* Chip — shared by the header meta and the weather footer */
+    /* Meta reads as three tiers, strongest first: what day it is · where that
+       sits in the year and where you are · the name-day. A hairline rule
+       separates it from the clock so the two never look like one run-on line. */
+    .time-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding-left: 18px;
+      border-left: 1px solid var(--border);
+      line-height: 1.35;
+    }
+
+    #date { color: var(--text); font-size: var(--fs-md); font-weight: 500; }
+
+    /* Calendar position + zone: one muted line, dot-separated */
+    .meta-line { display: flex; flex-wrap: wrap; color: var(--muted); font-size: var(--fs-2xs); }
+    .meta-line > * + *::before { content: "·"; margin: 0 7px; opacity: 0.5; }
+
+    /* Name day — the one accent in the header; label supplied in CSS so the
+       JS can keep writing plain textContent */
+    #nameday { font-size: var(--fs-2xs); color: var(--accent); }
+    #nameday::before { content: "Meniny"; margin-right: 7px; color: var(--muted); }
+
+    /* Chip — weather footer */
     .chip {
       display: inline-flex;
       align-items: center;
@@ -163,12 +200,6 @@
       line-height: 1.7;
       white-space: nowrap;
       text-decoration: none;
-    }
-
-    .chip-a {
-      background: color-mix(in srgb, var(--accent) 12%, transparent);
-      color: var(--accent);
-      font-weight: 500;
     }
 
     a.chip:hover { color: var(--text); }
@@ -490,6 +521,8 @@
       :root { --gap: 10px; --pad: 14px; --fs-display: 2.1rem; --fs-hero: 1.7rem; }
       .layout { padding: 12px; }
       .top { gap: 12px; padding: 0 2px 2px; }
+      /* the rule reads as a stray line once the header wraps to two rows */
+      .time-meta { padding-left: 0; border-left: 0; }
       .search { padding-left: 14px; }
       .engines button { padding: 6px 10px; }
       .wx-top { gap: 12px; }
@@ -508,15 +541,20 @@
     <header class="top">
       <div id="clock" title="Local time (24-hour)">
         <span id="c-hm">--:--</span><span id="c-s">--</span>
+        <span id="c-tz" title="Your timezone and its offset from UTC">
+          <span id="c-tz-abbr"></span>
+          <span id="c-tz-off"></span>
+        </span>
       </div>
       <div class="time-meta">
         <div id="date" title="Today's date"></div>
-        <div class="chips">
-          <span class="chip" id="c-week" title="ISO week number"></span>
-          <span class="chip" id="c-tz" title="Your timezone and its offset from UTC"></span>
-          <span class="chip chip-a" id="nameday" hidden
-                title="Slovak name-day calendar (meniny) — people with this name celebrate today"></span>
+        <div class="meta-line">
+          <span id="c-week" title="ISO week number"></span>
+          <span id="c-place" hidden
+                title="Approximate location the weather is shown for (browser geolocation, or the built-in fallback)"></span>
         </div>
+        <div id="nameday" hidden
+             title="Slovak name-day calendar (meniny) — people with this name celebrate today"></div>
       </div>
     </header>
 
@@ -568,19 +606,25 @@
     /* ================= CONFIG ================= */
 
     // Fallback weather coordinates, used when browser geolocation is declined
-    // or unavailable (city name is intentionally not displayed).
+    // or unavailable. The resolved place name shows in the header and the
+    // weather card, so the fallback town is visible — pick one you don't mind.
     const DEFAULT_LOCATION = { lat: 48.3774, lon: 17.5877 };
     let LOCATION = { ...DEFAULT_LOCATION };
 
-    // Icon-only quick links (favicon, no label — name shows as tooltip)
+    // Icon-only quick links (favicon, no label — name shows as tooltip).
+    // Grouped by purpose, in reading order: mail · news · weather · social.
     const ICON_LINKS = [
+      // Mail
       ["mailbox.org", "https://mailbox.org"],
+      ["Outlook", "https://outlook.office.com"],
+      // News
+      ["Feedly", "https://feedly.com"],
+      // Weather
+      ["Windy", "https://www.windy.com"],
+      // Social
+      ["LinkedIn", "https://www.linkedin.com"],
       ["Twitter / X", "https://x.com"],
       ["Bluesky", "https://bsky.app"],
-      ["LinkedIn", "https://www.linkedin.com"],
-      ["Outlook", "https://outlook.office.com"],
-      ["Feedly", "https://feedly.com"],
-      ["Windy", "https://www.windy.com"],
     ];
 
     // Countdowns — ["Label", "YYYY-MM-DD"]; past dates are hidden automatically.
@@ -690,7 +734,7 @@
     /* ================= Clock · date · name day ================= */
 
     const hmEl = $("c-hm"), secEl = $("c-s"), dateEl = $("date");
-    const weekEl = $("c-week"), tzEl = $("c-tz"), namedayEl = $("nameday");
+    const weekEl = $("c-week"), tzAbbrEl = $("c-tz-abbr"), tzOffEl = $("c-tz-off"), namedayEl = $("nameday");
     let dayKey = ""; // date/week/timezone/name day only change on a new day (or DST shift)
 
     function tick() {
@@ -703,11 +747,12 @@
       dayKey = key;
 
       dateEl.textContent = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-      weekEl.textContent = `W${isoWeek(now)}`;
+      weekEl.textContent = `Week ${isoWeek(now)}`;
 
       const tzAbbr = now.toLocaleTimeString("en-GB", { timeZoneName: "short" }).split(" ").pop();
       const om = -now.getTimezoneOffset(), oh = Math.trunc(om / 60), omin = Math.abs(om % 60);
-      tzEl.textContent = `${tzAbbr} · UTC${oh >= 0 ? "+" : ""}${oh}${omin ? ":" + String(omin).padStart(2, "0") : ""}`;
+      tzAbbrEl.textContent = tzAbbr;
+      tzOffEl.textContent = `UTC${oh >= 0 ? "+" : ""}${oh}${omin ? ":" + String(omin).padStart(2, "0") : ""}`;
 
       const names = NAMEDAYS[now.getMonth() + 1][now.getDate() - 1];
       const nd = names || NAMEDAY_HOLIDAYS[`${now.getMonth() + 1}-${now.getDate()}`];
@@ -1040,6 +1085,8 @@
         const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${LOCATION.lat}&longitude=${LOCATION.lon}&localityLanguage=en`);
         const j = await r.json();
         PLACE = j.locality || j.city || "";
+        $("c-place").textContent = PLACE;
+        $("c-place").hidden = !PLACE;
         // Terms used to match weather warnings to this location:
         // town name + region ("Trnavsky kraj") + region without the word "kraj"
         const terms = [j.locality, j.city, j.principalSubdivision,
