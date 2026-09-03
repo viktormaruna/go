@@ -385,6 +385,9 @@
     .wx-g .k { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
     .wx-g .v { font-size: var(--fs-xs); font-weight: 600; text-align: right; white-space: nowrap; }
 
+    /* Wind-direction arrow — rotated to the way the wind blows */
+    .wdir { display: inline-block; line-height: 1; color: var(--muted); }
+
     #wx-status { color: var(--muted); font-size: var(--fs-sm); }
 
     .wx-extra {
@@ -991,6 +994,17 @@
         // rows disappears entirely.
         const compass = deg => ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
         const n1 = cur.next_1_hours?.details;
+
+        // Pressure trend: now vs. the +6 h forecast step. The absolute number
+        // says little on its own — the direction of change is the forecast.
+        const p0 = det.air_pressure_at_sea_level;
+        const t0 = new Date(series[0].time); // anchor both ends to the series
+        const p6 = series.find(ts => new Date(ts.time) - t0 >= 6 * 3600e3)
+          ?.data.instant.details.air_pressure_at_sea_level;
+        const dp = p6 != null ? p6 - p0 : null;
+        const pTrend = dp == null ? "" : dp >= 1 ? " ↗" : dp <= -1 ? " ↘" : " →";
+        const pTrendTip = dp == null ? "" :
+          ` Trend: ${dp >= 1 ? "rising" : dp <= -1 ? "falling" : "steady"} (${dp >= 0 ? "+" : ""}${dp.toFixed(1)} hPa over the next 6 h).`;
         const R = (k, v, tip) => `<div class="r"${tip ? ` title="${tip}"` : ""}><span class="k">${k}</span><span class="v">${v}</span></div>`;
         const G = (title, rows) => rows.join("") ? `<div class="wx-g"><div class="gt">${title}</div>${rows.join("")}</div>` : "";
 
@@ -1000,14 +1014,16 @@
               "Relative humidity — how much moisture the air holds vs. its maximum"),
             det.dew_point_temperature != null ? R("Dew point", col(`${Math.round(det.dew_point_temperature)}°`, dewC(det.dew_point_temperature)),
               "Temperature at which dew would form — the closer to the air temperature, the muggier it feels") : "",
-            R("Pressure", `${Math.round(det.air_pressure_at_sea_level)} hPa`,
-              "Air pressure at sea level — falling pressure usually signals worsening weather"),
+            R("Pressure", `${Math.round(p0)} hPa${pTrend}`,
+              `Air pressure at sea level — falling pressure usually signals worsening weather.${pTrendTip}`),
           ]),
           G("Wind", [
-            R("Speed", `${col(`${Math.round(det.wind_speed)} m/s`, windC(det.wind_speed))} ${compass(det.wind_from_direction)}`,
-              "Average wind speed and the compass direction it blows from"),
+            R("Speed", col(`${Math.round(det.wind_speed)} m/s`, windC(det.wind_speed)),
+              "Average wind speed"),
             det.wind_speed_of_gust != null ? R("Gusts", col(`${Math.round(det.wind_speed_of_gust)} m/s`, windC(det.wind_speed_of_gust)),
               "Peak wind gust speed") : "",
+            R("Direction", `<span class="wdir" style="transform:rotate(${Math.round(det.wind_from_direction + 180) % 360}deg)">↑</span> ${compass(det.wind_from_direction)}`,
+              `Wind from ${compass(det.wind_from_direction)} (${Math.round(det.wind_from_direction)}°) — the arrow points the way it blows`),
           ]),
           G("Sky", [
             R("Clouds", `${Math.round(det.cloud_area_fraction)}%`,
