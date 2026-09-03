@@ -203,9 +203,23 @@
 
     #date { color: var(--text); font-size: var(--fs-md); font-weight: 500; }
 
-    /* Calendar position + zone: one muted line, dot-separated */
+    /* Week + name day: one muted line, dot-separated */
     .meta-line { display: flex; flex-wrap: wrap; color: var(--muted); font-size: var(--fs-2xs); }
     .meta-line > * + *::before { content: "·"; margin: 0 7px; opacity: 0.5; }
+
+    /* Location — its own block right of the date, behind the same hairline
+       rule that separates the clock from the meta. Pin icon + place name. */
+    #c-place {
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      gap: 7px;
+      padding-left: 18px;
+      border-left: 1px solid var(--border);
+      color: var(--muted);
+      font-size: var(--fs-md);
+    }
+    #c-place svg { width: 14px; height: 14px; flex: none; }
 
     /* Chip — weather footer */
     .chip {
@@ -541,8 +555,8 @@
       :root { --gap: 10px; --pad: 14px; --fs-display: 2.1rem; --fs-hero: 1.7rem; }
       .layout { padding: 12px; }
       .top { gap: 12px; padding: 0 2px 2px; }
-      /* the rule reads as a stray line once the header wraps to two rows */
-      .time-meta { padding-left: 0; border-left: 0; }
+      /* the rules read as stray lines once the header wraps to two rows */
+      .time-meta, #c-place { padding-left: 0; border-left: 0; }
       .search { padding-left: 14px; }
       .engines button { padding: 6px 10px; }
       .wx-top { gap: 12px; }
@@ -570,11 +584,16 @@
         <div id="date" title="Today's date"></div>
         <div class="meta-line">
           <span id="c-week" title="ISO week number"></span>
-          <span id="c-place" hidden
-                title="Approximate location the weather is shown for (browser geolocation, or the built-in fallback)"></span>
           <span id="nameday" hidden
                 title="Slovak name-day calendar (meniny) — people with this name celebrate today"></span>
         </div>
+      </div>
+      <div id="c-place" hidden
+           title="Approximate location the weather is shown for (browser geolocation, or the built-in fallback)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle>
+        </svg>
+        <span id="c-place-name"></span>
       </div>
     </header>
 
@@ -1146,7 +1165,7 @@
         const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${LOCATION.lat}&longitude=${LOCATION.lon}&localityLanguage=en`);
         const j = await r.json();
         PLACE = j.locality || j.city || "";
-        $("c-place").textContent = PLACE;
+        $("c-place-name").textContent = PLACE;
         $("c-place").hidden = !PLACE;
         // Terms used to match weather warnings to this location:
         // town name + region ("Trnavsky kraj") + region without the word "kraj"
