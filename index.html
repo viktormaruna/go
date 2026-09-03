@@ -736,6 +736,7 @@
     const hmEl = $("c-hm"), secEl = $("c-s"), dateEl = $("date");
     const weekEl = $("c-week"), tzAbbrEl = $("c-tz-abbr"), tzOffEl = $("c-tz-off"), namedayEl = $("nameday");
     let dayKey = ""; // date/week/timezone/name day only change on a new day (or DST shift)
+    let dayYM = null; // [year, month] dayKey falls in, to detect a month rollover
 
     function tick() {
       const now = new Date();
@@ -744,7 +745,10 @@
 
       const key = now.toDateString() + now.getTimezoneOffset();
       if (key === dayKey) return;
+      const rollover = dayKey !== ""; // false on the first tick, true at midnight
+      const wasYM = dayYM;
       dayKey = key;
+      dayYM = [now.getFullYear(), now.getMonth()];
 
       dateEl.textContent = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
       weekEl.textContent = `Week ${isoWeek(now)}`;
@@ -758,6 +762,17 @@
       const nd = names || NAMEDAY_HOLIDAYS[`${now.getMonth() + 1}-${now.getDate()}`];
       namedayEl.textContent = nd || "";
       namedayEl.hidden = !nd;
+
+      // The page no longer reloads itself, so the date-dependent widgets have to
+      // be refreshed here when the clock crosses midnight. The calendar follows
+      // today into a new month only when it was still showing the old one —
+      // a user who has paged elsewhere keeps their view, and re-rendering it in
+      // place clears the highlight from the day that is no longer today.
+      if (rollover) {
+        const following = wasYM && calY === wasYM[0] && calM === wasYM[1];
+        renderCal(...(following ? dayYM : [calY, calM]));
+        renderCountdowns();
+      }
     }
     tick();
     setInterval(tick, 1000);
@@ -848,15 +863,17 @@
       renderCal(d.getFullYear(), d.getMonth());
     }
 
-    {
+    function renderCountdowns() {
       const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
       const html = COUNTDOWNS
         .map(([label, date]) => [label, date, Math.round((new Date(date + "T00:00") - todayMid) / 86400000)])
         .filter(([, , d]) => d >= 0)
         .map(([label, date, d]) => `<div title="${date}"><span class="n">${esc(label)}</span><span class="v">${d === 0 ? "today" : d + " d"}</span></div>`)
         .join("");
-      if (html) { $("cd").innerHTML = html; $("cd").hidden = false; }
+      $("cd").innerHTML = html;
+      $("cd").hidden = !html;
     }
+    renderCountdowns();
 
     /* ================= Bookmarks ================= */
 
@@ -1217,11 +1234,13 @@
     loadTicker();
     setInterval(loadTicker, 5 * 60 * 1000);
 
-    /* ================= Auto-refresh ================= */
-    // Full page reload every 5 minutes — skipped while a search query is typed
-    setInterval(() => {
-      if (!qEl.value.trim()) location.reload();
-    }, 5 * 60 * 1000);
+    /* ================= Refresh policy ================= */
+    // There is deliberately no whole-page reload. Each source refreshes on its
+    // own cadence above (clock 1s · news 5min · warnings 15min · weather 30min,
+    // matching the ~30min Expires MET Norway sends). A blanket 5-minute reload
+    // used to pre-empt every interval longer than itself, so the weather and
+    // warning timers never once fired and every source was re-fetched at the
+    // reload's cadence instead of its own.
   </script>
 </body>
 </html>
