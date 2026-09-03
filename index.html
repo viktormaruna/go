@@ -3,14 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Home</title>
+
+  <!-- GitHub Pages cannot set response headers, so the policy ships as a meta
+       tag. It is defence-in-depth around the remote feed content this page
+       injects: img-src and connect-src are the directives that matter, since
+       they block the beacon and exfiltration routes an injected payload would
+       reach for. script-src has to allow inline (the whole app is one inline
+       script element), so this constrains what injected markup can reach, not what
+       it can run — the escaping at the injection points is still the primary
+       defence. Adding a source to the page means adding it to connect-src. -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'unsafe-inline';
+    style-src 'unsafe-inline';
+    img-src 'self' data:;
+    connect-src https://api.met.no https://air-quality-api.open-meteo.com
+                https://services.swpc.noaa.gov https://api.bigdatacloud.net
+                https://metar.vatsim.net https://api.rss2json.com
+                https://api.allorigins.win;
+    form-action https://search.brave.com;
+    base-uri 'none';
+    frame-src 'none';">
+
+  <title>go · viktormaruna</title>
   <!-- Publicly reachable but deliberately kept out of search engines -->
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
   <meta name="googlebot" content="noindex, nofollow">
   <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c0e12" media="(prefers-color-scheme: dark)">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <!-- No webfont is loaded. Inter stays first in the stack below, so it is used
+       when installed locally, and the system UI font is used otherwise. Loading
+       it from Google cost a render-blocking request that also reported every
+       visit; self-hosting it would need the latin-ext subset for the Slovak
+       name-day names, which is more weight than a start page should carry. -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.85em%22 font-size=%22100%22 fill=%22%23888%22>⌂</text></svg>">
 
   <style>
@@ -611,20 +636,42 @@
     const DEFAULT_LOCATION = { lat: 48.3774, lon: 17.5877 };
     let LOCATION = { ...DEFAULT_LOCATION };
 
+    // Same-origin proxy for the sources that send no CORS headers (worker.js;
+    // deploy steps in README). Preferred over the public proxies because those
+    // get blocked by DNS filters and rate-limited without warning.
+    // Leave "" until the worker is deployed — the page then falls back to the
+    // public proxies exactly as before, so this is safe to ship unset.
+    const FEED_PROXY = "";
+    const viaProxy = url => FEED_PROXY + encodeURIComponent(url);
+
+    // Favicons, inlined as data URIs. Fetching them at runtime reported every
+    // quick-link domain to a third party on each load (and cost a redirect per
+    // icon); they never change, so they ship with the page instead.
+    // Source: 64px PNG, rendered at 20px — sharp on HiDPI. Total ~6.5 kB.
+    const ICO = {
+      mailbox: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAb1BMVEWr5lkZNT+u6VoAIz4WMj+z8FuKu1IAADuc0lVokkshPUCv61oQLT618lux7VoMKj6Wy1QAID0AGT0AGz08W0MADzwHJj56qU4AHT1XfEdUeEdIa0am4ViCs1A/X0Q1VUMnREBbhEptmEyQxVQAFj6bZIqnAAACpklEQVRYhe1X2ZaqMBCEkNWEsAsqbjj//403gMYkEiXjuW/Tj3q60kt1dRNFf/afDRj2G3+eY205/8X7dFMkdys2NDyGnsBYGyRpqD9iWWzYtg1MgrPO9I/FToYBpMTyj+E5rAqA2gHEcYfDyojMEk45XMNyUE10EML6AACnZGsBJLf1OUiJsQRpW1o57NflADgC+13ZtEhRwSyEOPQrvGWPj6QSIo5LxiOOaoNNn/oAgEzz/aG7Zw5/kPqxrysdxPb4joxcUnwlxfj27H+ZiYPyZzcI8r+etrtzIZ7hxslwL5nqxiONypvC2DJhtT2rdddBNHQf+gBylzTwZFYcsWb63ztQABe2f9zYkyPpaUqjHPuwkAfAie3fMecp0NeJCqLBACCavjTDBciG13KnwwWWrVTV6ghz/3YAIFnKU9KSoXnEOtaDNwDQI6AAcSUzUzUzQrkfoPJLOGofNN3kwAeQ1V6+cabHs8A+AFj7Z87QycQL8IbvfQ29AJpIpcsAowDmaDsAmsrb1l+A3NQnG0BP3LjAlCAt+Tsi6wAoqo6LaGQAYiVdzMKWeRdAVZiRQtFDtiW8DK8CjgZrUy4ARDylCADcqECS2qFqJFkVfwKY5hTgqVLZyU4D0Mb2d4hkPrWbdA021sT1J1dwbCqbAPu7MFbDUznS2ioAFFtnmKxoH8k+J04O5qyJ4rxrU/+GQJrvKkw0F+DySECIhFwxlW/3w1GvVFhNg4W6B027w/6Wyg8nH8DGZaHEnc9DLERHjriXKxZ0fzD2Cxz1D7VNudtHiK9b77oPs5WqYOOyX3+egJst0WPLwi7dl/ss9EqVV+EgvFGpxRxeFl0ReiKev7rP9EBp61jomdxa913Ggg/11D70Vxxnjn39qfH1x873n1t/FmL/AE/JIQBnccCuAAAAAElFTkSuQmCC",
+      outlook: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwgHBgkIBwgKCgkLDRYPDQwMDRsUFRAWIB0iIiAdHx8kKDQsJCYxJx8fLT0tMTU3Ojo6Iys/RD84QzQ5OjcBCgoKDQwNGg8PGjclHyU3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3N//AABEIAEAAQAMBEQACEQEDEQH/xAAbAAACAwEBAQAAAAAAAAAAAAAABgQFBwMBAv/EADYQAAECBAQEAwQKAwAAAAAAAAECAwAEBREhMUFRBhJhcRMiUgdCocEjU2RygYLC0eHxJDI0/8QAGgEAAgMBAQAAAAAAAAAAAAAAAAQDBQYCAf/EACsRAAICAgECAwcFAAAAAAAAAAABAgMEESEFUSIxQRITFDKBofA0QrHR4f/aAAwDAQACEQMRAD8A3GAAgAIACAAgAIACAAgAIACACuqdYlpAFJPiPfVpOI77QxTjTt5XCEsnPqx/C3uXYWJupTE6u7q7J0QnACLOvHhWuEV6y52vbZyXWJiltpcZcvdQ+iXiFb/2I7+Ghe9SRYV3aQzUXiGTqqQlKg1MasrOJ7HWKzJw7KHt8ruNRmpFvCh2EABAAi1bjJUy6uXpd22knlL5/wBl9th1z7Rd4/TVFKVvn2M9ndTm24U8Lv6/QqmnL3Kj1JJhxx0UW3vZXztfaaJblLOr1X7o/eJIUN8yLCpteZVmaceXzurK1HUwwoqK0h2FpwqVRbZlXGwv6ZSbJCTik6G+ls49Udj1M22X/B/tJmZdbUlxAS+wSEpm/fR9/wBQ6594q8vpUZJzp4fb+iwUka3GfOz5cUlCFKWoJSBckmwAj1Jt6R42ktsxepMMyLi3ZOYQ81e/hpUOZPQbiNbVKUlqSMdpTeimmp6enByKSptr0DXvvE6jCPJNCmEeVyyMHA2CVmwGd47fls79ht8Ed2orV5WLpHq1iPeyeuj2eZEbPE4k/GO0NQloYKHw05NuodnrtMgg+H7y++w+MQXX+ytRJoXpvSN8GQjHlkLHtGfUxw04UqICnUJV1F7/ACiy6VFPJW+zK7qu/hml3Qi0qiyr9JXWa7PLlKfz+G2GhdbqumB1vpocrRcZGXONvuaI7l9kVONiRdfvbpaiRa/Q5RijJrlAnnJunhzw3kupstpV7Y4DUgZajO8cU5U5W+5ujqXp2YzPFgoKyp7QnVAPKSiaW2vwF+UOW8pUNL7w02t6Pamvl9QkJV+dVZhPlGa1YJEdI4vvrpXiY00ynMSZCreI761DLttHsuSpnmzslryQwSC7rEKWrgsMWzk1QZRljTCf7VFcvCqj9ob+cWfSf1P0Yj1Fbof0FOlGV4m4LZoSJ1iVqMk+pxtL6uVLoJUf1nLbrD98pY2U73HcZL09PzQnTCN2Oqt6af5/JHrqpXhjgiY4fVPMTdSnphLrqWFcyWQCk4n8gz36R5U5ZOUr9ajFa59fzZM4qmn3W9tnLg5Db/DymnkJcbU6sKSsXBGGkMXfOUOa3G7aJU1SQ0j/AAQEpSMGsgO0SV3+khJ7k9srm3DfHAiGfM4a0W1OVdYha5cFhhy8RrIyjJGyK+vUiWrlMdkJvmCHLEKScUqGIIiWi6VNinEjtrjbFxkZVWfZy/ILN54uMnJwS+H4+bCNBR1CNy8tMocqM8Z8x2u5UDg8E/8Adh0Z/mGnYJrqOv2ff/Blpso1T5REsxflTqcyTmYhly9sRttlbL2pEpTqUJKlkJAzJjnWyMXXVh2adcSDyqUSMIegmopMJMZOFqRMz00hRaWmXSQVuKFgRsNzFfnZMK4Nb5LPpmNZZPevD3NMjNGtCAAgA8sNoACw2gALDYQAFhsIAPYACAD/2Q==",
+      feedly: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAZlBMVEUrskz///8jsUdlwXgbr0IQrj0nsUkErTr6/vv2/PhQvWlbwHGv37mBzpK648OQ055FumB2yYhLvGVhwnbx+vOp3LTM6tKH0JfE58uZ1qbV7trh8uQztlTq9+0/uFuk27AAqSxtx4GpveGHAAABqElEQVRYhe2WW4OCIBCFZRzES5llmVpp/f8/uaAbiOCNh31Zz2t+Z4bhOOZ5u3bt+gshZRTccfCq+pEm6Mw/X0ToxBz5JiK9TtSJz67kq8rBAS6Kd3GAZshzh41zwCwkurb1gHFExmo3OEAs+y/PDg5wkfVTSj/S4bZyDhhLJOUIJsphVQ+YyPkdBACNmudhhQPm0bD+KA/LDmZ9PQ/pe4lXxbr6Rh7S2R7Ql893IwdLHlIMpvmP6r/nrwY/1wPk+oV1eXiYDuVUHqis34pHRB7ChBWmw9G+5eCs8/w+ohwDLA2D2n4IbH9/L95en4dQrMOAGYMM7WfA+/eBDw26PMRinbJ2zJPXxBBQHTLzCYlicVR6M2dQTexp1YLQta9v4R+T90hPa/j6OZ2kgcNNTJIdLPW9uU8VPao5UKQWvp5Jcueg5tDeU5664zZec+AqcbDSBB8s8dopOB/wN2zAwzLPHdQiFp8TeMpXpKZreK2HirHstZXniVI9FKVcCcWq/g0H4sLzU/hjvmRbeLEdtVUUrfki6AKIfam8cfmfFIDStvZ37fqP+gEeMhJ6Wcnz8wAAAABJRU5ErkJggg==",
+      windy: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAqFBMVEWkBQCkAwClBQCkBAClBACkAgD9/f3///+kAQClAwClAgClAQCjAwCgAACcAACWAAC6Ojfhxsb89vbctLO1Ozf67+7ShoOLAAD14+OQAADUnZ3eq6qmFBLHfn26TUevMCypHRuuQEDLkZG9VFLx2dmdHR3nvrywCACuOjimKSm5RUK9bGuyHxqpDwvv0tDOe3i+Y2LWko+8W1nHiIa6d3etVlawTk3Qo6NitHWHAAAFjklEQVRYhY2Xi1rqOhCFcyuZNJn0cDsioKICW+RQRPfW93+zM0laKNDqDv26eqFDM+vPJDDIwTDjrHUWQDmbMYAMWHZUwY3iolNZlqdP7vIss2F32Sxteacym4PN6RPegAJYm9Evh/Oj2nS/Qxm9J5cZfZsbyAwHkOHVZUMzzrNuZUpJI4w0RgpJmzFCURPqpJIxqTqVMcFCE8zRgXCspUn5nSrHHD3rVAqgBDUnUkvKpeTdynJHQkFyF7rgcs7AUWr4UdMXO5VZB7mIHBhriYNchOyK/KiK54arTqWfaDbHr1uW8axbKXupt8opOko5YFUOkkY3OpUpKcks2km6IoIv0dhgabhDSmaxbmVgLWfcWsLJgvceDYClMWAdnThinnElOetUJpl0wVLpBOJdv39fGLrElH8Y9ocjDF7T91inBhQSPc4tZgOtx8OCMsL8w1jr3viR7gW7whc61AYODFnu8Ike6enxM5J9RTju6eXKJr8J8XYlkGI9yHPcrMMzPd0vTO5+xeOe3jhyhiglcNqVBSOiKfhSB/BC4D91ABDCqORqq1ZjiYaSm8/qAK4OoCnAj4OJ3A7WqwymVQDkqhGAfiiO7VoV0JYdzxnVFiNDVQI8BrDWVwHGK8tzTlueV2p3c4D5ztbnoSLRRvWJXOjFzJc0vuo3WK6o6NJ92tW6GDl8XRzPEweRBNxOUoAdCvwvBVgvQHIuecQmqls8444C1OdNDu7L5P0D5rhLAWbzCw7sYg+4fQZ7zYFzu+ijnhBJFQd6Oodz32Ez9DjdYgsHzOAwBXhDATYFOKA9810VhxG+7l+ghQMaPynA+M4zwBTgX8zOfHc4KPx0iryFA6X80yAMhsGTV6qoA9gzDorh3s9nT15cc2C5wfdkw9BbUw2mPTY5MG6nC9yuP/HERYMDi4uyCgD2GOCMg6I/K+Cj7xpcnDig0YD9FACNKNLLUA5OHEh87b3g4/LLN7hocCCkrwJYUMVa1zk4cqCK/noO72Rzaz1wCqosrhcoikMV4MQB93eDT1yVpZfNesDinEb1lQTvxyFA+YzMv8UABw+Mfip6DYuypB7oqU/n9XURP3EHdhKL2haFG8UAU2/r2hdG650r1uMHVM2aqE5NmmIZAugnVLCJBZLGQn0XPyflo3/QS28azyhGLlIaIcscfYpZ+l3ksOnF3qzCaKR8Z7Dp6w8s+vrOx/Osuh44cDysUGiJk/vXQRyDO4BVGXuzAZ4Zk3Eagrq/8c+9Hrp4Xl9vzAuUCPCpjHwi4EGnkpb8BjcYfHhf6mFxXh/OOJAi2q/1b6oI7zpVZRWSZW8GeonF3UBb7JoXXCiV+Cu5Z8H9iVkcYfAbiqke3/vdUk9uL+eFJgfk5G1EafII7iUmYU+ThOREBc03RLoeeXH0/5oD2qo33yK4mIR1QQj794GeIL5N9GRlL+fGJgdUFGARWSrnFn+Hg16hJL7RRPtWPJaaAufqvJ1xQBvgXez71uNnpOoX4h96flashtSNF1f738pBFmaEOMfqsUf4CgfDm096fu2LA9Uq6lntfzsHtN6TuI15XN7iloaWHuzp+fH7zZ7WDsM5nPxv58BZY/ErdqJ/m4osYdH7fXPQWpcjVN+sDyIHYaHpMI2IyX01VfU+RuFdxlvPW9YH5xzEHe6G8R20TouEcER9+SrUuf+tHISdQBhWD8cgcRtPafXVtka64CCqQv9V6tj6/aTrbWFUW7vigP5D0CXpR1/T2Wz69PCSVHl17n8nB8BDvecW0c3nDqlB0Cv/OzkIOxeTwzFOgVQKHMhr/zs5UDbPLflNauy173/BAeUD4h+OpD+tE685uGxXvv/IQfVHrNYf1sptHFzot62Lg+yk7f7/xEFD2/3/Cw4q7fK/hQN+yUH+Fxz8DzrQeYTudIPiAAAAAElFTkSuQmCC",
+      linkedin: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADCUlEQVR4nO2bO2zaUBSGf1dFCh1CqDOkyUBaS+mQSDgrQ+Is2RDZyJg1nRjYgaEbA1Mzhm4ZG7FFlWKpEksqxZWaoZVcCUWlSxAxi5EY3KEFEWyIr2M4+PFNGN9rn/P5Pi2ZMwwDQeYZdQDUhAKoA6Dm+bgTXL5WBJADEJtZNNNBA1ABUDHK6fvRkyYBXL62BEAGkJx6aLMhBqAA4ACAOHrSqgvk4J/kh0n+b9UPGCfAr5hysxLg9T4/CVNu4SzgtKIk8JCEZQCArN5BVluuBTVLmAVIAo/q4TYS8ejgvwI20GjrODq79pwIpi4gCTwuj1MPku+TiEdxeZyCJPCuBTcLmARUD7ddKTNP2BYgCbzlkx8lEY96qhUwCFi2fVGWstQEfhq0LUBW72xflKUsNQwCWmi09UfLNdq6p6ZCpi5wdHbtSpl5gkmArLawd1K3bAmNto69k7qnnj7gYCUoqy2sv/8c3KVwH1lteTbpYRwLmDb9xZQkLENparjXewAApdkZ/HYDZgFGOT3xPJev2S5fuviJ4sWPwbEk8MjtvEFmc2XiPRptHdWrW1S+/HqyjLloAesvX6CaFbFrcwmdiEdR2N9Abuc1cuc3qF7dOr43uQBxdRHyuxRiCxHmurGFCE6z/95zOpVAuhQW15wnP8xpVnS8ASMVkNlceXLyfYr7bx3V881maFfgIa4uMtfzjQAAONh6xVyHfBAcRev2oPzuDI6XohEkbT5ZJ+PA3AjQur2xU5ok8Khkth4VIa55tAto3R6kD/WxU5mstmztMp0MqHMhIHd+A6XZmVhGaXbw8avzBc84yAX0l7V2GB4b3IJcwKfvf2yXVZqa6/cnF0C9pSYX4ObW1gnkAliYRmshFxD4LkBNKIA6AGpCAdQBUBMKoA6AmlAAdQDUhAKoA6CGG/1miMvXfP0RkVFOc8PHgW8BoQDqAKixEuD+i7f5wZSblYDKDAKhwpSbaRYAAC5fU+C/74a+GeW0rY+mAEACUII/uoMGoGSVPDCmBQSJcBagDoCawAv4CyJz5Ou100U7AAAAAElFTkSuQmCC",
+      x: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAY1BMVEUAAAD////X19fT09NdXV3c3NyCgoL7+/vExMTt7e2ysrLp6en19fV2dnYXFxfi4uKjo6O4uLg5OTkfHx+Tk5Orq6vNzc1TU1MuLi6MjIxFRUVpaWmamppKSkonJydvb28PDw8Fgb+oAAABn0lEQVRYhe2Wy7KCMBBEByIIgqKIKL7//yvNPAJELZK4uXfB2UxVoAfpdAYBZmZm/iGLKu5JNh+XFa3vpzpk0UD1fjGh5cv0b8hHHQ7fmqeOl7jTs7M2+3jYlvRbhx7ggbfpusY6siElfebUA6z0fbmuO12LfnVB+sRDD1DJkwpdV7JWkz730sNTvNpjffDSkho8/Rrwz63FDtp13pvaU8+Gl8B2oA0cgIW3HiDW97fAduw8A2CD79wAbFDZegbA4oaaG8DFpNInABaNFi11PUQBAbBoRVYFBMCm5Bd/hhso1LJ1lIrTLx1SCZ9JRTiZTJXkl10gSjlOv9pwjeQ4HcNOgmEtGbpzq2AbjiaEGAJzOAI4kbgwBuLh6IIa8AjZGAPpcJwD9EUkCjNdmjAb4qgf6yZHSlflq9+RvhuatdDPCB84AP2HSZRnmRFuOADDrpnp0smMcMEBGH9azXTBGRE79RwA23AzXXC8X10NOABvfwLwWJUavHSc1vcBsKijgWkbRgGwSEcdpiZslyil4m+hP8TKkKynX2JmZuZveAH7kQy9Z0xa3AAAAABJRU5ErkJggg==",
+      bsky: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAJFBMVEVHcEwQhf8Rhf4Rhf8Rhf4Rhf4Rhf8Rhf4Rhf4Rhf4Rhf4Rhf4Ael9wAAAAC3RSTlMAPO0S4KclVsONccwIbF0AAAG/SURBVFiF7VfZkoQgDJRwCPL//7szggghHbFqH6fflHTIHd22H/4FJuZM3ryieMo5VsqeC9yyCuMqpTAoX4h2hW5jI9D3OeQOxzP/6OVD50GBf+LHQXz/vEnDm0yqG5ZG6WNWUMwCCFw2cZ+62Aowk+gxxUDTMPPPGAgKZA0C/1QgvZfiMPl/3SQe5CkXVhQL8MRxBU4Us1BBjiM/ylLnGclnqedPxVJAinElwhVSpr5wmnVdIIGXl58eHbdAIhtr6wH/cgvDk8DcDA0GVWDFAUu0wilZaheAUmw2YgdaxStXZAszkK8yUNLwgVcPtT5bQetZ7ZYFAx6iAEE3fxq2S/xxZMCGQGDt/mk4WPAS3M75W924S2xlkweToqKGYjLK3tlCWvADX78cBZIC0G/9ZwgfEi8rYd7hb+uA7433/cTigOZ2JuRaXFSQUKfSqADORaPvlBvIUrhU+NcYGJ0ebhVeTOCiHa0NFoINyBHMsFDNkqkJHUzjBNxkkW3i1+icMI/CAzp6yoQF78V2FiSvjxxuAuQzDXemhiiQNtMG0U6wa4in/4HgBP6tYeW3qIxGftH3x0wb58wM1c0fOP4Aubpe1lSY0VQAAAAASUVORK5CYII=",
+    };
+
     // Icon-only quick links (favicon, no label — name shows as tooltip).
     // Grouped by purpose, in reading order: mail · news · weather · social.
     const ICON_LINKS = [
       // Mail
-      ["mailbox.org", "https://mailbox.org"],
-      ["Outlook", "https://outlook.office.com"],
+      ["mailbox.org", "https://mailbox.org", ICO.mailbox],
+      ["Outlook", "https://outlook.office.com", ICO.outlook],
       // News
-      ["Feedly", "https://feedly.com"],
+      ["Feedly", "https://feedly.com", ICO.feedly],
       // Weather
-      ["Windy", "https://www.windy.com"],
+      ["Windy", "https://www.windy.com", ICO.windy],
       // Social
-      ["LinkedIn", "https://www.linkedin.com"],
-      ["Twitter / X", "https://x.com"],
-      ["Bluesky", "https://bsky.app"],
+      ["LinkedIn", "https://www.linkedin.com", ICO.linkedin],
+      ["Twitter / X", "https://x.com", ICO.x],
+      ["Bluesky", "https://bsky.app", ICO.bsky],
     ];
 
     // Countdowns — ["Label", "YYYY-MM-DD"]; past dates are hidden automatically.
@@ -878,9 +925,9 @@
     /* ================= Bookmarks ================= */
 
     $("bm").innerHTML =
-      `<h2>Links</h2><div class="ico-row">` + ICON_LINKS.map(([n, u]) =>
+      `<h2>Links</h2><div class="ico-row">` + ICON_LINKS.map(([n, u, ico]) =>
         `<a class="ico-link" href="${u}" title="${n}" target="_blank" rel="noopener">` +
-        `<img src="https://www.google.com/s2/favicons?domain=${new URL(u).hostname}&sz=64" alt="${n}" loading="lazy"></a>`
+        `<img src="${ico}" alt="${n}" width="64" height="64"></a>`
       ).join("") + `</div>`;
 
     /* ================= Weather (yr.no / MET Norway) + AQI + aurora ================= */
@@ -1066,7 +1113,9 @@
         };
         const [icao] = METAR_STATIONS.reduce((best, [id, la, lo]) =>
           d2(la, lo) < best[1] ? [id, d2(la, lo)] : best, ["", Infinity]);
-        const res = await fetch(`https://metar.vatsim.net/${icao}`);
+        // Direct only as a fallback: some DNS filters block metar.vatsim.net
+        const src = `https://metar.vatsim.net/${icao}`;
+        const res = await fetch(FEED_PROXY ? viaProxy(src) : src);
         if (!res.ok) throw new Error(res.status);
         const txt = (await res.text()).trim();
         if (!txt) throw new Error("empty");
@@ -1113,18 +1162,24 @@
       } catch { /* name stays hidden, region terms keep their fallback */ }
     }
 
-    // SHMÚ warnings via MeteoAlarm (their API lacks CORS, so it goes through
-    // rss2json like the news feeds). Shown only when a warning matches the
-    // region derived from the browser's actual location (fallback: Trnava).
+    // SHMÚ warnings via MeteoAlarm (their API lacks CORS, so it goes through the
+    // worker, or rss2json until that is deployed). Shown only when a warning
+    // matches the region derived from the browser's location (fallback: Trnava).
     const WARNING_FEED = "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-slovakia";
     let REGION_TERMS = ["trnav"];
 
     async function loadWarnings() {
       try {
-        const res = await fetch("https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(WARNING_FEED));
-        const data = await res.json();
-        if (data.status !== "ok") return;
-        const hits = data.items.filter(it => {
+        let items;
+        if (FEED_PROXY) {
+          items = parseFeedXml(await (await fetch(viaProxy(WARNING_FEED))).text());
+        } else {
+          const data = await (await fetch(
+            "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(WARNING_FEED))).json();
+          if (data.status !== "ok") return;
+          items = data.items;
+        }
+        const hits = items.filter(it => {
           const text = norm(it.title + " " + it.description);
           return REGION_TERMS.some(t => text.includes(t));
         });
@@ -1178,26 +1233,42 @@
       };
     }
 
+    // Raw RSS/Atom XML → the item shape newsItem expects
+    function parseFeedXml(text) {
+      const doc = new DOMParser().parseFromString(text, "text/xml");
+      return [...doc.querySelectorAll("item, entry")].map(el => {
+        const pick = sel => el.querySelector(sel)?.textContent?.trim() || "";
+        const linkEl = el.querySelector("link");
+        return {
+          title: pick("title"),
+          description: pick("description") || pick("summary") || pick("content"),
+          link: linkEl?.getAttribute("href") || linkEl?.textContent?.trim() || "",
+          pubDate: pick("pubDate") || pick("published") || pick("updated"),
+        };
+      });
+    }
+
+    // Tried in order of trust. The raw-XML routes are preferred over rss2json
+    // because the original timestamps keep their zone, so they cannot be
+    // misread the way rss2json's zone-stripped UTC once was.
     async function fetchFeed(f) {
-      try { // 1 — rss2json
+      if (FEED_PROXY) {
+        try { // 1 — our own worker
+          const r = await fetch(viaProxy(f.url));
+          const items = parseFeedXml(await r.text());
+          if (items.length) return items.map(it => newsItem(f, it, true));
+        } catch { /* fall through */ }
+      }
+
+      try { // 2 — rss2json (free tier, no SLA)
         const r = await fetch("https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(f.url));
         const d = await r.json();
         if (d.status === "ok" && d.items?.length) return d.items.map(it => newsItem(f, it, false));
       } catch { /* fall through */ }
 
-      try { // 2 — raw XML through a plain CORS proxy
+      try { // 3 — public CORS proxy; DNS filters block this one on some networks
         const r = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(f.url));
-        const doc = new DOMParser().parseFromString(await r.text(), "text/xml");
-        const items = [...doc.querySelectorAll("item, entry")].map(el => {
-          const pick = sel => el.querySelector(sel)?.textContent?.trim() || "";
-          const linkEl = el.querySelector("link");
-          return {
-            title: pick("title"),
-            description: pick("description") || pick("summary") || pick("content"),
-            link: linkEl?.getAttribute("href") || linkEl?.textContent?.trim() || "",
-            pubDate: pick("pubDate") || pick("published") || pick("updated"),
-          };
-        });
+        const items = parseFeedXml(await r.text());
         if (items.length) return items.map(it => newsItem(f, it, true));
       } catch { /* give up on this feed for this round */ }
 
