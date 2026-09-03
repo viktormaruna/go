@@ -189,8 +189,8 @@
       color: var(--muted);
     }
 
-    /* Meta reads as three tiers, strongest first: what day it is · where that
-       sits in the year and where you are · the name-day. A hairline rule
+    /* Meta reads as two tiers: the date, then one muted line placing it —
+       week of the year, location, and the day's name-day. A hairline rule
        separates it from the clock so the two never look like one run-on line. */
     .time-meta {
       display: flex;
@@ -206,11 +206,6 @@
     /* Calendar position + zone: one muted line, dot-separated */
     .meta-line { display: flex; flex-wrap: wrap; color: var(--muted); font-size: var(--fs-2xs); }
     .meta-line > * + *::before { content: "·"; margin: 0 7px; opacity: 0.5; }
-
-    /* Name day — the one accent in the header; label supplied in CSS so the
-       JS can keep writing plain textContent */
-    #nameday { font-size: var(--fs-2xs); color: var(--accent); }
-    #nameday::before { content: "Meniny"; margin-right: 7px; color: var(--muted); }
 
     /* Chip — weather footer */
     .chip {
@@ -577,9 +572,9 @@
           <span id="c-week" title="ISO week number"></span>
           <span id="c-place" hidden
                 title="Approximate location the weather is shown for (browser geolocation, or the built-in fallback)"></span>
+          <span id="nameday" hidden
+                title="Slovak name-day calendar (meniny) — people with this name celebrate today"></span>
         </div>
-        <div id="nameday" hidden
-             title="Slovak name-day calendar (meniny) — people with this name celebrate today"></div>
       </div>
     </header>
 
